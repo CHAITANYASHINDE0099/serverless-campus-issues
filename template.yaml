@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: IAM-authenticated campus issue tracker with versioned DynamoDB updates
+
+Resources:
+  IssueApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: prod
+      Auth:
+        EnableIamAuthorizer: true
+        DefaultAuthorizer: AWS_IAM
+
+  IssueTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  IssueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: api.lambda_handler
+      Runtime: python3.12
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref IssueTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt IssueTable.Arn
+      Events:
+        Create:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IssueApi
+            Path: /issues/{issueId}
+            Method: PUT
+            PayloadFormatVersion: '2.0'
+        Read:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IssueApi
+            Path: /issues/{issueId}
+            Method: GET
+            PayloadFormatVersion: '2.0'
+        Advance:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref IssueApi
+            Path: /issues/{issueId}
+            Method: PATCH
+            PayloadFormatVersion: '2.0'
+
+Outputs:
+  IssueApiUrl:
+    Description: Base URL for IAM-signed issue requests
+    Value: !Sub 'https://${IssueApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod'
